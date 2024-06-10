@@ -1,0 +1,35 @@
+project:
+  type: website
+  output-dir: _docs
+  preview:
+    port: 3000
+    browser: false
+
+format:
+  html:
+    theme: cosmo
+    css: styles.css
+    toc: true
+    toc-depth: 4
+
+website:
+  title: "evci_tool"
+  site-url: "https://AnoopRKulkarni.github.io/evci_tool/"
+  description: "Backend Python scripts for the EVCI tool sans frontend"
+  twitter-card: true
+  open-graph: true
+  repo-branch: main
+  repo-url: "https://github.com/AnoopRKulkarni/evci_tool/"
+  repo-actions: [issue]
+  navbar:
+    background: primary
+    search: true
+    right:
+      - icon: github
+        href: "https://github.com/AnoopRKulkarni/evci_tool/"
+  sidebar:
+    style: "floating"
+
+metadata-files: 
+  - sidebar.yml
+  - custom.yml

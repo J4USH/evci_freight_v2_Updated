@@ -1,0 +1,4 @@
+- source: project
+  quarto-pub:
+    - id: 1315ceeb-2712-4468-b267-c0ed41248d03
+      url: 'https://quartopub.com/sites/innotomy/evci_tool'

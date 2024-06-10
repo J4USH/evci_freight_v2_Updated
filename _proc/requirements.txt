@@ -1,0 +1,14 @@
+fiona
+rtree
+geopandas
+pandas
+numpy
+matplotlib
+shapely 
+streamlit
+extra-streamlit-components
+scipy
+openpyxl
+cryptography
+pyjwt
+flask
