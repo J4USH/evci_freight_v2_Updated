@@ -75,20 +75,50 @@ async def analyze(request: AnalyzeRequest):
         if isinstance(value, Decimal):
             db_input[key] = float(value)
         elif key == "years_of_analysis":  
-            db_input[key] = list(range(1, value + 1))
+            db_input[key] = list(range(1, db_input[key]+1))
+        
 
     # Override defaults with database values if present
-    for key in db_input:
-        if key in ui_inputs :
+    for key in ui_inputs:
+        if key in db_input:
             if db_input[key] is not None:
-                if(key == "plot_dendrogram" or key == "years_of_analysis" ):
-                    ui_inputs[key] = db_input[key]
-                else:
-                    ui_inputs[key] = float(db_input[key])*0.01
-                print(ui_inputs[key],key)
+                ui_inputs[key] = db_input[key]
 
+    
+    if(db_input['capex_2w_charger'] is not None):
+        ui_inputs['capex_2W']=db_input['capex_2w_charger']
+    if(db_input['capex_3w_charger'] is not None):
+        ui_inputs['capex_3WS']=db_input['capex_3w_charger']
+    if(db_input['capex_4w_charger'] is not None):
+        ui_inputs['capex_4WS']=db_input['capex_4w_charger']
+    if(db_input['capex_4wf_charger'] is not None):
+        ui_inputs['capex_4WF']=db_input['capex_4wf_charger']
+    if(db_input['hoarding_capex_cost'] is not None):
+        ui_inputs['hoarding cost']=db_input['hoarding_capex_cost']
+    if(db_input['kiosk_capex_cost'] is not None):
+        ui_inputs['kiosk_cost']=db_input['kiosk_capex_cost']
+    if(db_input['year_1_conversion'] is not None):
+        ui_inputs['year1_conversion']=db_input['year_1_conversion']
+    if(db_input['year_2_conversion'] is not None):
+        ui_inputs['year2_conversion']=db_input['year_2_conversion']
+    if(db_input['year_3_conversion'] is not None):
+        ui_inputs['year3_conversion']=db_input['year_3_conversion']
+    
+
+
+    if ui_inputs["cluster"] == 1:
+        ui_inputs["cluster"]=True
+    else:
+        ui_inputs["cluster"]=False
+
+    if ui_inputs["plot_dendrogram"] == 1:
+        ui_inputs["plot_dendrogram"]=True
+    else:
+        ui_inputs["plot_dendrogram"]=False
     # Run analysis
     filepath='chandigarh_karnal'
+
+    
     s_u_df = analyze_sites(filepath, ui_inputs)
 
     df1= pd.read_json(f'output\{filepath}\clustered_evci_analysis.json')
