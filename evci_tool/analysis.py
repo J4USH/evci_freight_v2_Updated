@@ -9,9 +9,11 @@ import pandas as pd
 import geopandas as gpd
 
 import shapely
-
+import mysql.connector
 import os
 from tqdm import tqdm
+from fastapi import HTTPException
+from fastapi.responses import JSONResponse
 
 import matplotlib.pyplot as plt
 
@@ -26,9 +28,17 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # %% ../03_analysis.ipynb 5
-def run_episode(m,s,t,g,ui_inputs,s_df,txt,OUTPUT_PATH,corridor):
+def run_episode(m,s,t,g,ui_inputs,s_df,idSelect,db_inputs,txt,OUTPUT_PATH,corridor,cluster_th=0,cluster=True):
+    mydb = mysql.connector.connect(
+        host="139.59.23.75",
+        port=5782,
+        user="dbadminusr",
+        password="$D3vel0per2024",
+        database="EVCI"
+    )
+    mycursor = mydb.cursor()
     "This function runs a full episode of analysis on a set of sites."
-    
+    report={}
     print('\n' + txt.capitalize() + ' Analysis')
     print('________________\n')
     total = s_df.shape[0]
@@ -60,9 +70,34 @@ def run_episode(m,s,t,g,ui_inputs,s_df,txt,OUTPUT_PATH,corridor):
     s_u_df['max vehicles'] = u_df['max vehicles']
     s_u_df['estimated vehicles'] = u_df['estimated vehicles']
 
+    report["no_site"]=f'{Nc}/{total}'
+    report["capex"]=f'{sum(u_df.capex)/1e7:.2f}'
+    report["opex"]=f'{sum(u_df.opex)/1e7:.2f}'
+    report["margin"]=f'{sum(u_df.margin)/1e7:.2f}'
+
+    confirmed_sites = s_u_df[s_u_df.utilization > cluster_th]
+    report['confirmed_utilization']=f'{int(cluster_th*100)}%: {confirmed_sites.shape[0]}'
+
+    print(report)
     #@title Save initial analysis to Excel
     output_df = s_u_df.copy()
     output_df.drop('geometry', axis=1, inplace=True)
+
+    insert_query = """
+INSERT INTO analysis_response_report (
+    numberOfSite, capex, opex, margin, confirmedUtilization, 
+    analysisInput_ID, output_for, createdBy
+) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+"""
+
+    values = (
+    report["no_site"], report['capex'], report['opex'], report['margin'], 
+    report['confirmed_utilization'], idSelect, txt+"_evci_analysis", db_inputs['createdBy']
+)
+    mycursor.execute(insert_query, values)
+    mydb.commit()
+    mycursor.close()
+    mydb.close()
     
     # Save output dataframe as both xlsx and json
     output_df.to_excel(OUTPUT_PATH + '/' + txt + '_evci_analysis.xlsx')
@@ -71,48 +106,48 @@ def run_episode(m,s,t,g,ui_inputs,s_df,txt,OUTPUT_PATH,corridor):
     return s_u_df
 
 # %% ../03_analysis.ipynb 7
-def analyze_sites(corridor:str, ui_inputs):
+def analyze_sites(request_id,corridor:str, ui_inputs,idSelect,db_inputs):
     "The function analyzes sites specified as part of a corridor."
-
+    try:
     #@title Read data from excel sheets
-    model,site,traffic,grid, INPUT_PATH, OUTPUT_PATH = setup_and_read_data(corridor)
+        model,site,traffic,grid, INPUT_PATH, OUTPUT_PATH = setup_and_read_data(corridor,request_id=request_id)
     
     #set variables for clustering etc from the UI
-    cluster = ui_inputs['cluster']
-    cluster_th = ui_inputs['cluster_th']
-    plot_dendrogram = ui_inputs['plot_dendrogram']
-    use_defaults = ui_inputs['use_defaults']
+        cluster = ui_inputs['cluster']
+        cluster_th = ui_inputs['cluster_th']
+        plot_dendrogram = ui_inputs['plot_dendrogram']
+        use_defaults = ui_inputs['use_defaults']
 
     #check if mandatory worksheets in xlsx files are available
-    avail = data_availability_check(model,site,traffic,grid)
-    assert len(avail) == 0, f"{avail} sheets missing from the xlsx. Please try again." 
+        avail = data_availability_check(model,site,traffic,grid)
+        assert len(avail) == 0, f"{avail} sheets missing from the xlsx. Please try again." 
     
     #check if any missingness
-    missing = data_integrity_check(model,site,traffic,grid)
+        missing = data_integrity_check(model,site,traffic,grid)
     #assert len(missing) > 0, f"{missing} sheets contain missing data." 
 
     #if missing values found, defaults shall be assumed for debug purposes. This is not for production version
-    if use_defaults and len(missing) > 0:
-        site['sites']['Traffic congestion'] = 1
-        site['sites']['Year for Site recommendation'] = 1
-        site['sites']['Hoarding/Kiosk (1 is yes & 0 is no)'] = 1
-        site['sites']['Hoarding margin'] = 270000    
+        if use_defaults and len(missing) > 0:
+            site['sites']['Traffic congestion'] = 1
+            site['sites']['Year for Site recommendation'] = 1
+            site['sites']['Hoarding/Kiosk (1 is yes & 0 is no)'] = 1
+            site['sites']['Hoarding margin'] = 270000    
     
     #@title Read required data sheets only
     #df = gpd.read_file(INPUT_PATH + '/shape_files/' + corridor + '.shp')
 
-    data = site['sites']
-    data['Name'] = data['Name']
-    data['Latitude'] = pd.to_numeric(data['Latitude'])
-    data['Longitude'] = pd.to_numeric(data['Longitude'])
-    data['geometry'] = [shapely.geometry.Point(xy) for xy in 
+        data = site['sites']
+        data['Name'] = data['Name']
+        data['Latitude'] = pd.to_numeric(data['Latitude'])
+        data['Longitude'] = pd.to_numeric(data['Longitude'])
+        data['geometry'] = [shapely.geometry.Point(xy) for xy in 
                         zip(data['Longitude'], data['Latitude'])]
 
-    data_df = {}
+        data_df = {}
 
-    data_df = gpd.GeoDataFrame(data, geometry=data['geometry'])
+        data_df = gpd.GeoDataFrame(data, geometry=data['geometry'])
 
-    s_df = pd.DataFrame(columns=['Name',
+        s_df = pd.DataFrame(columns=['Name',
                                 'Latitude', 'Longitude',
                                 'Traffic congestion',
                                 'year 1',
@@ -120,54 +155,58 @@ def analyze_sites(corridor:str, ui_inputs):
                                 'hoarding margin',
                                 'geometry'])
 
-    s_df = s_df.reset_index(drop=True)
+        s_df = s_df.reset_index(drop=True)
 
-    for i in range(data_df.shape[0]):
-        s_df.loc[i] = [
-           data_df.loc[i].Name, 
-           data_df.loc[i].Latitude, 
-           data_df.loc[i].Longitude, 
-           data_df.loc[i]['Traffic congestion'],
-           data_df.loc[i]['Year for Site recommendation'],
-           data_df.loc[i]['Hoarding/Kiosk (1 is yes & 0 is no)'],
-           data_df.loc[i]['Hoarding margin'],
-           data_df.loc[i].geometry
-        ] 
+        for i in range(data_df.shape[0]):
+            s_df.loc[i] = [
+            data_df.loc[i].Name, 
+            data_df.loc[i].Latitude, 
+            data_df.loc[i].Longitude, 
+            data_df.loc[i]['Traffic congestion'],
+            data_df.loc[i]['Year for Site recommendation'],
+            data_df.loc[i]['Hoarding/Kiosk (1 is yes & 0 is no)'],
+            data_df.loc[i]['Hoarding margin'],
+            data_df.loc[i].geometry
+            ] 
 
-    s_u_df = run_episode(model,site,traffic,grid,ui_inputs,s_df,'initial',OUTPUT_PATH, corridor)
+        s_u_df = run_episode(model,site,traffic,grid,ui_inputs,s_df,idSelect,db_inputs,'initial',OUTPUT_PATH, corridor,cluster_th=cluster_th,cluster=cluster)
 
     #@title Threshold and cluster
-    if cluster:
+        if cluster:
         #clustering_candidates = s_u_df[(s_u_df.utilization <= cluster_th) & (s_u_df['year 1'] == 1)]
-        clustering_candidates = s_u_df[s_u_df.utilization <= cluster_th]
-        print('candidates for clustering: ', clustering_candidates.shape[0])
-        points = np.array((clustering_candidates.apply(lambda x: list([x['Latitude'], x['Longitude']]),axis=1)).tolist())
-        Z = linkage (points, method='complete', metric='euclidean');
-        if plot_dendrogram:
-            plt.figure(figsize=(14,8))
-            dendrogram(Z);
-        max_d = 0.01
-        clusters = fcluster(Z, t=max_d, criterion='distance')
-        clustered_candidates = gpd.GeoDataFrame(clustering_candidates)
+            clustering_candidates = s_u_df[s_u_df.utilization <= cluster_th]
+            print('candidates for clustering: ', clustering_candidates.shape[0])
+            points = np.array((clustering_candidates.apply(lambda x: list([x['Latitude'], x['Longitude']]),axis=1)).tolist())
+            Z = linkage (points, method='complete', metric='euclidean');
+            if plot_dendrogram:
+                plt.figure(figsize=(14,8))
+                dendrogram(Z);
+            max_d = 0.01
+            clusters = fcluster(Z, t=max_d, criterion='distance')
+            clustered_candidates = gpd.GeoDataFrame(clustering_candidates)
         #base = grid_df.plot(color='none', alpha=0.2, edgecolor='black', figsize=(8,8))
         #clustered_candidates.plot(ax=base, column=clusters, legend=True)
 
     #@title Build final list of sites
-    confirmed_sites = s_u_df[s_u_df.utilization > cluster_th]
-    print(f'confirmed sites with utilization > {int(cluster_th*100)}%: {confirmed_sites.shape[0]}')
-    if cluster:
-        val, ind = np.unique (clusters, return_index=True)
-        clustered_sites = clustered_candidates.reset_index(drop=True)
-        clustered_sites = clustered_sites.iloc[clustered_sites.index.isin(ind)]
-        final_list_of_sites = pd.concat([confirmed_sites, clustered_sites], axis=0)
-    else:
-        final_list_of_sites = confirmed_sites.copy()
+        confirmed_sites = s_u_df[s_u_df.utilization > cluster_th]
+        print(f'confirmed sites with utilization > {int(cluster_th*100)}%: {confirmed_sites.shape[0]}')
+        if cluster:
+            val, ind = np.unique (clusters, return_index=True)
+            clustered_sites = clustered_candidates.reset_index(drop=True)
+            clustered_sites = clustered_sites.iloc[clustered_sites.index.isin(ind)]
+            final_list_of_sites = pd.concat([confirmed_sites, clustered_sites], axis=0)
+        else:
+            final_list_of_sites = confirmed_sites.copy()
 
-    if cluster:
-        print('final list: ', final_list_of_sites.shape[0])
-        s_df = final_list_of_sites.copy()
-        s_df = s_df.reset_index(drop=True)
+        if cluster:
+            print('final list: ', final_list_of_sites.shape[0])
+            s_df = final_list_of_sites.copy()
+            s_df = s_df.reset_index(drop=True)
         
-        s_u_df = run_episode(model,site,traffic,grid,ui_inputs,s_df,'clustered',OUTPUT_PATH, corridor)
+            s_u_df = run_episode(model,site,traffic,grid,ui_inputs,s_df,idSelect,db_inputs,'clustered',OUTPUT_PATH, corridor,cluster_th=cluster_th,cluster=cluster)
     
-    return s_u_df
+        
+        return OUTPUT_PATH
+    except Exception as e:
+        error_message=str(e)
+        raise HTTPException(status_code=500, detail=error_message)

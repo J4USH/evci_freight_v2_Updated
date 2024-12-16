@@ -9,22 +9,42 @@ import os
 import numpy as np
 import pandas as pd
 import json
+from fastapi import HTTPException
 
 
-def setup_and_read_data(corridor:str, input_path='input/', output_path='output/'):
+def setup_and_read_data(corridor:str, input_path='../../../media/evci/uploads/dataManagement/', output_path='../../../media/evci/uploads/dataManagement/',request_id=""):
     "This function sets up paths and reads input excel files for a specified corridor"
 
     INPUT_PATH = input_path + corridor + '/'
-    OUTPUT_PATH = output_path + corridor + '/'
+    OUTPUT_PATH = output_path + corridor + '/'+"output"+'/' + request_id + '/'
 
-    if not os.path.exists(OUTPUT_PATH):
-        os.mkdir (output_path + corridor)
-        
-    model   = pd.read_excel(input_path + "model.xlsx",sheet_name=['charger_specific','battery_specific','others'])
-    sites   = pd.read_excel(INPUT_PATH + "sites.xlsx",sheet_name=['sites'])
-    traffic = pd.read_excel(INPUT_PATH + "traffic.xlsx",sheet_name=['profile'])
-    grid    = pd.read_excel(INPUT_PATH + "grid.xlsx",sheet_name=['grid'])
+    print(OUTPUT_PATH)
     
+	
+    
+    try:   
+        model   = pd.read_excel(input_path + "modelFreight.xlsx",sheet_name=['charger_specific','battery_specific','others'])
+        sites   = pd.read_excel(INPUT_PATH + "Sites.xlsx",sheet_name=['sites'])
+        traffic = pd.read_excel(INPUT_PATH + "Traffic.xlsx",sheet_name=['profile'])
+        grid    = pd.read_excel(INPUT_PATH + "Grid.xlsx",sheet_name=['grid'])
+    except FileNotFoundError as e:
+        full_path = str(e).split("'")[-2]  # Extract the missing file name
+        missing_file = os.path.basename(full_path)
+        error_message = f"PLEASE UPLOAD THE FILE: {missing_file}"
+        raise HTTPException(status_code=500, detail=error_message)
+    except KeyError:
+        error_message = f"PLEASE UPLOAD THE Correct File"
+        raise HTTPException(status_code=500, detail=error_message)
+    # except Exception as e:
+    #     # Catch any other exceptions
+    #     error_message = f"An error occurred: {str(e)}"
+    #     raise HTTPException(status_code=500, detail=error_message)
+    if not os.path.exists(OUTPUT_PATH):
+       try:
+           os.makedirs(OUTPUT_PATH, exist_ok=True)
+           print(f"Directory created successfully: {OUTPUT_PATH}")
+       except Exception as e:
+          print(f"Failed to create directory: {e}")
     return model, sites, traffic, grid, INPUT_PATH, OUTPUT_PATH
 
 # %% ../00_config.ipynb 9
